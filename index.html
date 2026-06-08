@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>TRADINGVIEW CLONE EMA SCANNER</title>
+
+  <style>
+    body {
+      background: #0e0e0e;
+      color: white;
+      font-family: Arial;
+      text-align: center;
+    }
+
+    table {
+      margin: auto;
+      width: 80%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      border: 1px solid #333;
+      padding: 10px;
+    }
+
+    .buy { color: lime; font-weight: bold; }
+    .sell { color: red; font-weight: bold; }
+    .none { color: gray; }
+
+    .price { color: #00d9ff; }
+  </style>
+</head>
+
+<body>
+
+<h2>EMA 9/21/200 - TRADINGVIEW CLONE SCANNER</h2>
+
+<table>
+  <tr>
+    <th>SYMBOL</th>
+    <th>PRICE</th>
+    <th>SIGNAL</th>
+  </tr>
+  <tbody id="data"></tbody>
+</table>
+
+<script>
+
+// =====================
+// FINNHUB API KEY
+// =====================
+const API_KEY = "d86l9g1r01qgiu45tlt0d86l9g1r01qgiu45tltg";
+
+// =====================
+// SYMBOL LIST	
+// =====================
+const symbols = [
+  "OANDA:EUR_USD",
+  "OANDA:GBP_USD",
+  "OANDA:USD_JPY",
+  "OANDA:XAU_USD",
+  "AAPL",
+  "MSFT",
+  "AMZN",
+  "TSLA",
+  "KO"
+];
+
+// =====================
+// MARKET DATA STORAGE
+// =====================
+let market = {};
+
+// =====================
+// EMA FUNCTION
+// =====================
+function EMA(data, period) {
+  let k = 2 / (period + 1);
+  let ema = [data[0]];
+
+  for (let i = 1; i < data.length; i++) {
+    ema.push(data[i] * k + ema[i - 1] * (1 - k));
+  }
+
+  return ema;
+}
+
+// =====================
+// TRADINGVIEW LOGIC (100% COPY)
+// =====================
+function getSignal(closes) {
+
+  if (closes.length < 200) return "NONE";
+
+  let ema9 = EMA(closes, 9);
+  let ema21 = EMA(closes, 21);
+  let ema200 = EMA(closes, 200);
+
+  let last = closes.at(-1);
+  let prev = closes.at(-2);
+
+  let e9 = ema9.at(-1);
+  let e21 = ema21.at(-1);
+  let e200 = ema200.at(-1);
+
+  let e21_prev = ema21.at(-2);
+
+  // BUY (crossover)
+  let buySignal = (ema9.at(-2) <= e21_prev && e9 > e21) && last > e200;
+
+  // SELL (crossunder)
+  let sellSignal = (ema9.at(-2) >= e21_prev && e9 < e21) && last < e200;
+
+  if (buySignal) return "BUY";
+  if (sellSignal) return "SELL";
+
+  return "NONE";
+}
+
+// =====================
+// RENDER TABLE
+// =====================
+function render() {
+
+  let html = "";
+
+  for (let s of symbols) {
+
+    let d = market[s];
+    if (!d) continue;
+
+    let signal = getSignal(d.history || []);
+
+    let cls = "none";
+    if (signal === "BUY") cls = "buy";
+    if (signal === "SELL") cls = "sell";
+
+    html += `
+      <tr>
+        <td>${s}</td>
+        <td class="price">${d.price}</td>
+        <td class="${cls}">${signal}</td>
+      </tr>
+    `;
+  }
+
+  document.getElementById("data").innerHTML = html;
+}
+
+// =====================
+// WEBSOCKET FINNHUB
+// =====================
+const socket = new WebSocket(`wss://ws.finnhub.io?token=${API_KEY}`);
+
+socket.onopen = function () {
+  symbols.forEach(sym => {
+    socket.send(JSON.stringify({
+      type: "subscribe",
+      symbol: sym
+    }));
+  });
+};
+
+// =====================
+// RECEIVE DATA
+// =====================
+socket.onmessage = function (event) {
+
+  const data = JSON.parse(event.data);
+  if (!data.data) return;
+
+  data.data.forEach(tick => {
+
+    let sym = tick.s;
+
+    if (!market[sym]) {
+      market[sym] = {
+        price: tick.p,
+        history: []
+      };
+    }
+
+    market[sym].price = tick.p;
+
+    market[sym].history.push(tick.p);
+
+    if (market[sym].history.length > 300) {
+      market[sym].history.shift();
+    }
+
+  });
+
+  render();
+};
+
+</script>
+
+</body>
+</html>
