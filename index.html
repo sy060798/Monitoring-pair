@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI TRADING FIX CORS SYSTEM</title>
+<title>AI MONITOR RR 1:2 FIXED (220/110)</title>
 
 <style>
 body{
@@ -43,17 +43,20 @@ td,th{
 
 <body>
 
-<h1>🚀 AI TRADING FIX (CORS SAFE)</h1>
+<h1>📊 AI MONITOR RR 1:2 FIXED (TP 220 / SL 110)</h1>
 
 <table>
 <tr>
 <th>PAIR</th>
 <th>PRICE</th>
 <th>SIGNAL</th>
+<th>RSI</th>
 <th>STRENGTH</th>
-<th>PROB 250</th>
-<th>TARGET 250</th>
+<th>ENTRY</th>
+<th>TP</th>
+<th>SL</th>
 <th>STATUS</th>
+<th>RESULT</th>
 </tr>
 
 <tbody id="data"></tbody>
@@ -63,13 +66,11 @@ td,th{
 
 <script>
 
-const proxy = "https://api.allorigins.win/raw?url=";
+const symbols=["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT"];
 
-const symbols = [
-"BTCUSDT","ETHUSDT","BNBUSDT",
-"SOLUSDT","XRPUSDT","DOGEUSDT"
-];
+let positions = {};
 
+// ================= EMA
 function EMA(data,p){
 let k=2/(p+1);
 let e=[data[0]];
@@ -79,42 +80,48 @@ e.push(data[i]*k + e[i-1]*(1-k));
 return e;
 }
 
-// ================= FETCH DATA (FIX CORS)
+// ================= RSI
+function RSI(data, period=14){
+let gains=0,losses=0;
+
+for(let i=data.length-period;i<data.length;i++){
+let diff=data[i]-data[i-1];
+if(diff>=0) gains+=diff;
+else losses-=diff;
+}
+
+let rs=gains/(losses||1);
+return 100-(100/(1+rs));
+}
+
+// ================= DATA
 async function getMarket(symbol){
-const url = encodeURIComponent(
-`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=15m&limit=200`
-);
-
-const res = await fetch(proxy + url);
-const d = await res.json();
-
-return {
-c: d.map(x => +x[4]),
-v: d.map(x => +x[5])
-};
+const url=`https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=30m&limit=200`;
+const res=await fetch(url);
+const d=await res.json();
+return d.map(x=>+x[4]);
 }
 
 async function price(symbol){
-const url = encodeURIComponent(
-`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`
-);
-
-const res = await fetch(proxy + url);
-const d = await res.json();
+const url=`https://data-api.binance.vision/api/v3/ticker/price?symbol=${symbol}`;
+const res=await fetch(url);
+const d=await res.json();
 return +d.price;
 }
 
-// ================= ANALYZE ENGINE
-function analyze(c,v){
+// ================= ANALYZE
+function analyze(c){
+
+const current=c.at(-1);
 
 const ema9=EMA(c,9);
 const ema21=EMA(c,21);
 const ema50=EMA(c,50);
 const ema200=EMA(c,200);
 
-const current=c.at(-1);
+const rsi=RSI(c,14);
 
-// TREND SCORE
+// trend strength
 let bull=0,bear=0;
 
 if(ema9.at(-1)>ema21.at(-1)) bull+=20; else bear+=20;
@@ -129,86 +136,134 @@ if(momentum>0) bull+=10; else bear+=10;
 
 const bullPct=(bull/(bull+bear))*100;
 
-// ATR
-let changes=[];
-for(let i=1;i<c.length;i++){
-changes.push(Math.abs(c[i]-c[i-1]));
-}
-
-const atr = changes.slice(-20).reduce((a,b)=>a+b,0)/20;
+// FILTER KETAT (anti sideways)
+let isTrend = Math.abs(bullPct-50)>18;
 
 // SIGNAL
 let signal="NO TRADE";
-if(bullPct>60) signal="BUY";
-if(bullPct<40) signal="SELL";
 
-// TARGET 250 PIP (simple scaling)
-const tp250_up=current+atr*5;
-const tp250_dn=current-atr*5;
-
-// PROBABILITY
-let prob250 = Math.min(95, bullPct + (atr/current)*1000);
-
-if(bullPct<45 && bullPct>55) prob250 *= 0.5;
-
-// STATUS FILTER
-let status="OK";
-if(prob250 < 40){
-status="WEAK SETUP";
-signal="NO TRADE";
+if(isTrend && bullPct>68 && rsi<70){
+signal="BUY";
+}
+else if(isTrend && bullPct<32 && rsi>30){
+signal="SELL";
 }
 
 return {
 signal,
 bullPct,
-prob250,
-tp250_up,
-tp250_dn,
-status
+rsi,
+current
 };
 }
 
-// ================= RENDER
+// ================= LOOP
 async function render(){
 
 let html="";
 
 for(let s of symbols){
 
-try{
-
-const m=await getMarket(s);
+const c=await getMarket(s);
 const p=await price(s);
-const r=analyze(m.c,m.v);
+const r=analyze(c);
+
+let entry="-";
+let tp="-";
+let sl="-";
+let status="WAIT";
+let result="-";
+
+// ================= FIXED RR 1:2
+const TP_PIPS = 220;
+const SL_PIPS = 110;
+
+// ================= ENTRY LOCK
+if(!positions[s]){
+
+if(r.signal==="BUY"){
+
+positions[s]={
+type:"BUY",
+entry:r.current,
+tp:r.current + TP_PIPS,
+sl:r.current - SL_PIPS
+};
+
+}
+
+if(r.signal==="SELL"){
+
+positions[s]={
+type:"SELL",
+entry:r.current,
+tp:r.current - TP_PIPS,
+sl:r.current + SL_PIPS
+};
+
+}
+}
+
+// ================= TRACK POSITION
+if(positions[s]){
+
+let pos=positions[s];
+
+entry=pos.entry.toFixed(2);
+tp=pos.tp.toFixed(2);
+sl=pos.sl.toFixed(2);
+status=pos.type;
+
+// BUY LOGIC
+if(pos.type==="BUY"){
+
+if(p>=pos.tp){
+result="TP ✅";
+delete positions[s];
+}
+else if(p<=pos.sl){
+result="SL ❌";
+delete positions[s];
+}
+else result="HOLD BUY";
+
+}
+
+// SELL LOGIC
+if(pos.type==="SELL"){
+
+if(p<=pos.tp){
+result="TP ✅";
+delete positions[s];
+}
+else if(p>=pos.sl){
+result="SL ❌";
+delete positions[s];
+}
+else result="HOLD SELL";
+
+}
+
+}
 
 let cls="no";
 if(r.signal==="BUY") cls="buy";
 if(r.signal==="SELL") cls="sell";
-
-let target="-";
-
-if(r.signal==="BUY"){
-target=`UP 250: ${r.tp250_up.toFixed(2)}`;
-}else if(r.signal==="SELL"){
-target=`DN 250: ${r.tp250_dn.toFixed(2)}`;
-}
 
 html+=`
 <tr>
 <td>${s}</td>
 <td class="price">${p.toFixed(4)}</td>
 <td class="${cls}">${r.signal}</td>
+<td>${r.rsi.toFixed(1)}</td>
 <td>${r.bullPct.toFixed(1)}%</td>
-<td>${r.prob250.toFixed(1)}%</td>
-<td class="small">${target}</td>
-<td class="small">${r.status}</td>
+<td>${entry}</td>
+<td>${tp}</td>
+<td>${sl}</td>
+<td class="small">${status}</td>
+<td class="small">${result}</td>
 </tr>
 `;
-
-}catch(e){
-console.log("error:",s,e);
-}
-
 }
 
 document.getElementById("data").innerHTML=html;
