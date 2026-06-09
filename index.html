@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI 250 PIP STABLE SYSTEM</title>
+<title>AI TRADING FIX CORS SYSTEM</title>
 
 <style>
 body{
@@ -38,16 +38,12 @@ td,th{
 .no{ color:#888; }
 .price{ color:#ffd54f; }
 .small{ font-size:11px; color:#aaa; }
-
-.note{ font-size:11px; color:#00d9ff; }
-.warn{ color:#ffcc00; font-weight:bold; }
-.strong{ color:#00ffea; font-weight:bold; }
 </style>
 </head>
 
 <body>
 
-<h1>🚀 AI 250 PIP STABLE SYSTEM + SMART NOTE</h1>
+<h1>🚀 AI TRADING FIX (CORS SAFE)</h1>
 
 <table>
 <tr>
@@ -58,7 +54,6 @@ td,th{
 <th>PROB 250</th>
 <th>TARGET 250</th>
 <th>STATUS</th>
-<th>NOTE</th>
 </tr>
 
 <tbody id="data"></tbody>
@@ -68,7 +63,12 @@ td,th{
 
 <script>
 
-const symbols=["BTCUSDT","ETHUSDT","BNBUSUSDT","SOLUSDT","XRPUSDT","DOGEUSDT"];
+const proxy = "https://api.allorigins.win/raw?url=";
+
+const symbols = [
+"BTCUSDT","ETHUSDT","BNBUSDT",
+"SOLUSDT","XRPUSDT","DOGEUSDT"
+];
 
 function EMA(data,p){
 let k=2/(p+1);
@@ -79,30 +79,42 @@ e.push(data[i]*k + e[i-1]*(1-k));
 return e;
 }
 
+// ================= FETCH DATA (FIX CORS)
 async function getMarket(symbol){
-const url=`https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=15m&limit=200`;
-const res=await fetch(url);
-const d=await res.json();
-return {c:d.map(x=>+x[4]),v:d.map(x=>+x[5])};
+const url = encodeURIComponent(
+`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=15m&limit=200`
+);
+
+const res = await fetch(proxy + url);
+const d = await res.json();
+
+return {
+c: d.map(x => +x[4]),
+v: d.map(x => +x[5])
+};
 }
 
 async function price(symbol){
-const url=`https://data-api.binance.vision/api/v3/ticker/price?symbol=${symbol}`;
-const res=await fetch(url);
-const d=await res.json();
+const url = encodeURIComponent(
+`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`
+);
+
+const res = await fetch(proxy + url);
+const d = await res.json();
 return +d.price;
 }
 
+// ================= ANALYZE ENGINE
 function analyze(c,v){
-
-const current=c.at(-1);
 
 const ema9=EMA(c,9);
 const ema21=EMA(c,21);
 const ema50=EMA(c,50);
 const ema200=EMA(c,200);
 
-// ================= TREND
+const current=c.at(-1);
+
+// TREND SCORE
 let bull=0,bear=0;
 
 if(ema9.at(-1)>ema21.at(-1)) bull+=20; else bear+=20;
@@ -115,79 +127,55 @@ else bear+=20;
 const momentum=current-c.at(-5);
 if(momentum>0) bull+=10; else bear+=10;
 
-const total=bull+bear;
-const bullPct=(bull/total)*100;
+const bullPct=(bull/(bull+bear))*100;
 
-// ================= ATR
+// ATR
 let changes=[];
 for(let i=1;i<c.length;i++){
 changes.push(Math.abs(c[i]-c[i-1]));
 }
 
-const atrRaw = changes.slice(-20).reduce((a,b)=>a+b,0)/20;
-const atrPct = atrRaw / current;
+const atr = changes.slice(-20).reduce((a,b)=>a+b,0)/20;
 
-// ================= FILTER
-let isTrend = atrPct > 0.0012 && Math.abs(bullPct-50) > 10;
-
-// ================= SIGNAL
+// SIGNAL
 let signal="NO TRADE";
-if(isTrend && bullPct>60) signal="BUY";
-if(isTrend && bullPct<40) signal="SELL";
+if(bullPct>60) signal="BUY";
+if(bullPct<40) signal="SELL";
 
-// ================= TARGET
-const tp250_up=current+atrRaw*5;
-const tp250_dn=current-atrRaw*5;
+// TARGET 250 PIP (simple scaling)
+const tp250_up=current+atr*5;
+const tp250_dn=current-atr*5;
 
-// ================= PROB
-let prob250 = 50 + (bullPct-50) + (atrPct*1000);
+// PROBABILITY
+let prob250 = Math.min(95, bullPct + (atr/current)*1000);
 
-if(!isTrend){
-prob250 *= 0.4;
-}
+if(bullPct<45 && bullPct>55) prob250 *= 0.5;
 
-prob250 = Math.max(5, Math.min(99, prob250));
-
-// ================= STATUS
+// STATUS FILTER
 let status="OK";
-if(!isTrend){
-status="NOT CAPABLE 250 PIP";
+if(prob250 < 40){
+status="WEAK SETUP";
 signal="NO TRADE";
 }
 
-// ================= NOTE SYSTEM (NEW)
-let note="-";
-
-if(prob250 >= 90){
-note="🔥 VERY STRONG MOVE";
-}
-else if(prob250 >= 80 && signal==="SELL"){
-note="⚠️ CONSIDER CLOSE / TAKE PROFIT";
-}
-else if(prob250 >= 80 && signal==="BUY"){
-note="🟢 STRONG BUY ZONE";
-}
-else if(signal==="NO TRADE"){
-note="⛔ WAIT / SIDEWAYS";
-}
-
-// ================= OUTPUT
 return {
 signal,
 bullPct,
 prob250,
 tp250_up,
 tp250_dn,
-status,
-note
+status
 };
 }
 
+// ================= RENDER
 async function render(){
 
 let html="";
 
 for(let s of symbols){
+
+try{
 
 const m=await getMarket(s);
 const p=await price(s);
@@ -198,6 +186,7 @@ if(r.signal==="BUY") cls="buy";
 if(r.signal==="SELL") cls="sell";
 
 let target="-";
+
 if(r.signal==="BUY"){
 target=`UP 250: ${r.tp250_up.toFixed(2)}`;
 }else if(r.signal==="SELL"){
@@ -213,9 +202,13 @@ html+=`
 <td>${r.prob250.toFixed(1)}%</td>
 <td class="small">${target}</td>
 <td class="small">${r.status}</td>
-<td class="note">${r.note}</td>
 </tr>
 `;
+
+}catch(e){
+console.log("error:",s,e);
+}
+
 }
 
 document.getElementById("data").innerHTML=html;
