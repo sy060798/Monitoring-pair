@@ -1,196 +1,230 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-  <title>TRADINGVIEW CLONE EMA SCANNER</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 250 PIP STABLE SYSTEM</title>
 
-  <style>
-    body {
-      background: #0e0e0e;
-      color: white;
-      font-family: Arial;
-      text-align: center;
-    }
+<style>
+body{
+    background:#0b0f19;
+    color:white;
+    font-family:Arial;
+    text-align:center;
+}
 
-    table {
-      margin: auto;
-      width: 80%;
-      border-collapse: collapse;
-    }
+h1{ color:#00e5ff; }
 
-    th, td {
-      border: 1px solid #333;
-      padding: 10px;
-    }
+table{
+    width:98%;
+    margin:auto;
+    border-collapse:collapse;
+    margin-top:20px;
+}
 
-    .buy { color: lime; font-weight: bold; }
-    .sell { color: red; font-weight: bold; }
-    .none { color: gray; }
+th{
+    background:#131b2e;
+    color:#00e5ff;
+}
 
-    .price { color: #00d9ff; }
-  </style>
+td,th{
+    border:1px solid #1f2b45;
+    padding:8px;
+    font-size:12px;
+}
+
+.buy{ color:#00ff88; font-weight:bold; }
+.sell{ color:#ff4d4d; font-weight:bold; }
+.no{ color:#888; }
+.price{ color:#ffd54f; }
+.small{ font-size:11px; color:#aaa; }
+
+.note{ font-size:11px; color:#00d9ff; }
+.warn{ color:#ffcc00; font-weight:bold; }
+.strong{ color:#00ffea; font-weight:bold; }
+</style>
 </head>
 
 <body>
 
-<h2>EMA 9/21/200 - TRADINGVIEW CLONE SCANNER</h2>
+<h1>🚀 AI 250 PIP STABLE SYSTEM + SMART NOTE</h1>
 
 <table>
-  <tr>
-    <th>SYMBOL</th>
-    <th>PRICE</th>
-    <th>SIGNAL</th>
-  </tr>
-  <tbody id="data"></tbody>
+<tr>
+<th>PAIR</th>
+<th>PRICE</th>
+<th>SIGNAL</th>
+<th>STRENGTH</th>
+<th>PROB 250</th>
+<th>TARGET 250</th>
+<th>STATUS</th>
+<th>NOTE</th>
+</tr>
+
+<tbody id="data"></tbody>
 </table>
+
+<div id="update"></div>
 
 <script>
 
-// =====================
-// FINNHUB API KEY
-// =====================
-const API_KEY = "d86l9g1r01qgiu45tlt0d86l9g1r01qgiu45tltg";
+const symbols=["BTCUSDT","ETHUSDT","BNBUSUSDT","SOLUSDT","XRPUSDT","DOGEUSDT"];
 
-// =====================
-// SYMBOL LIST	
-// =====================
-const symbols = [
-  "OANDA:EUR_USD",
-  "OANDA:GBP_USD",
-  "OANDA:USD_JPY",
-  "OANDA:XAU_USD",
-  "AAPL",
-  "MSFT",
-  "AMZN",
-  "TSLA",
-  "KO"
-];
-
-// =====================
-// MARKET DATA STORAGE
-// =====================
-let market = {};
-
-// =====================
-// EMA FUNCTION
-// =====================
-function EMA(data, period) {
-  let k = 2 / (period + 1);
-  let ema = [data[0]];
-
-  for (let i = 1; i < data.length; i++) {
-    ema.push(data[i] * k + ema[i - 1] * (1 - k));
-  }
-
-  return ema;
+function EMA(data,p){
+let k=2/(p+1);
+let e=[data[0]];
+for(let i=1;i<data.length;i++){
+e.push(data[i]*k + e[i-1]*(1-k));
+}
+return e;
 }
 
-// =====================
-// TRADINGVIEW LOGIC (100% COPY)
-// =====================
-function getSignal(closes) {
-
-  if (closes.length < 200) return "NONE";
-
-  let ema9 = EMA(closes, 9);
-  let ema21 = EMA(closes, 21);
-  let ema200 = EMA(closes, 200);
-
-  let last = closes.at(-1);
-  let prev = closes.at(-2);
-
-  let e9 = ema9.at(-1);
-  let e21 = ema21.at(-1);
-  let e200 = ema200.at(-1);
-
-  let e21_prev = ema21.at(-2);
-
-  // BUY (crossover)
-  let buySignal = (ema9.at(-2) <= e21_prev && e9 > e21) && last > e200;
-
-  // SELL (crossunder)
-  let sellSignal = (ema9.at(-2) >= e21_prev && e9 < e21) && last < e200;
-
-  if (buySignal) return "BUY";
-  if (sellSignal) return "SELL";
-
-  return "NONE";
+async function getMarket(symbol){
+const url=`https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=15m&limit=200`;
+const res=await fetch(url);
+const d=await res.json();
+return {c:d.map(x=>+x[4]),v:d.map(x=>+x[5])};
 }
 
-// =====================
-// RENDER TABLE
-// =====================
-function render() {
-
-  let html = "";
-
-  for (let s of symbols) {
-
-    let d = market[s];
-    if (!d) continue;
-
-    let signal = getSignal(d.history || []);
-
-    let cls = "none";
-    if (signal === "BUY") cls = "buy";
-    if (signal === "SELL") cls = "sell";
-
-    html += `
-      <tr>
-        <td>${s}</td>
-        <td class="price">${d.price}</td>
-        <td class="${cls}">${signal}</td>
-      </tr>
-    `;
-  }
-
-  document.getElementById("data").innerHTML = html;
+async function price(symbol){
+const url=`https://data-api.binance.vision/api/v3/ticker/price?symbol=${symbol}`;
+const res=await fetch(url);
+const d=await res.json();
+return +d.price;
 }
 
-// =====================
-// WEBSOCKET FINNHUB
-// =====================
-const socket = new WebSocket(`wss://ws.finnhub.io?token=${API_KEY}`);
+function analyze(c,v){
 
-socket.onopen = function () {
-  symbols.forEach(sym => {
-    socket.send(JSON.stringify({
-      type: "subscribe",
-      symbol: sym
-    }));
-  });
+const current=c.at(-1);
+
+const ema9=EMA(c,9);
+const ema21=EMA(c,21);
+const ema50=EMA(c,50);
+const ema200=EMA(c,200);
+
+// ================= TREND
+let bull=0,bear=0;
+
+if(ema9.at(-1)>ema21.at(-1)) bull+=20; else bear+=20;
+if(ema21.at(-1)>ema50.at(-1)) bull+=20; else bear+=20;
+if(ema50.at(-1)>ema200.at(-1)) bull+=30; else bear+=30;
+
+if(current>ema200.at(-1)) bull+=20;
+else bear+=20;
+
+const momentum=current-c.at(-5);
+if(momentum>0) bull+=10; else bear+=10;
+
+const total=bull+bear;
+const bullPct=(bull/total)*100;
+
+// ================= ATR
+let changes=[];
+for(let i=1;i<c.length;i++){
+changes.push(Math.abs(c[i]-c[i-1]));
+}
+
+const atrRaw = changes.slice(-20).reduce((a,b)=>a+b,0)/20;
+const atrPct = atrRaw / current;
+
+// ================= FILTER
+let isTrend = atrPct > 0.0012 && Math.abs(bullPct-50) > 10;
+
+// ================= SIGNAL
+let signal="NO TRADE";
+if(isTrend && bullPct>60) signal="BUY";
+if(isTrend && bullPct<40) signal="SELL";
+
+// ================= TARGET
+const tp250_up=current+atrRaw*5;
+const tp250_dn=current-atrRaw*5;
+
+// ================= PROB
+let prob250 = 50 + (bullPct-50) + (atrPct*1000);
+
+if(!isTrend){
+prob250 *= 0.4;
+}
+
+prob250 = Math.max(5, Math.min(99, prob250));
+
+// ================= STATUS
+let status="OK";
+if(!isTrend){
+status="NOT CAPABLE 250 PIP";
+signal="NO TRADE";
+}
+
+// ================= NOTE SYSTEM (NEW)
+let note="-";
+
+if(prob250 >= 90){
+note="🔥 VERY STRONG MOVE";
+}
+else if(prob250 >= 80 && signal==="SELL"){
+note="⚠️ CONSIDER CLOSE / TAKE PROFIT";
+}
+else if(prob250 >= 80 && signal==="BUY"){
+note="🟢 STRONG BUY ZONE";
+}
+else if(signal==="NO TRADE"){
+note="⛔ WAIT / SIDEWAYS";
+}
+
+// ================= OUTPUT
+return {
+signal,
+bullPct,
+prob250,
+tp250_up,
+tp250_dn,
+status,
+note
 };
+}
 
-// =====================
-// RECEIVE DATA
-// =====================
-socket.onmessage = function (event) {
+async function render(){
 
-  const data = JSON.parse(event.data);
-  if (!data.data) return;
+let html="";
 
-  data.data.forEach(tick => {
+for(let s of symbols){
 
-    let sym = tick.s;
+const m=await getMarket(s);
+const p=await price(s);
+const r=analyze(m.c,m.v);
 
-    if (!market[sym]) {
-      market[sym] = {
-        price: tick.p,
-        history: []
-      };
-    }
+let cls="no";
+if(r.signal==="BUY") cls="buy";
+if(r.signal==="SELL") cls="sell";
 
-    market[sym].price = tick.p;
+let target="-";
+if(r.signal==="BUY"){
+target=`UP 250: ${r.tp250_up.toFixed(2)}`;
+}else if(r.signal==="SELL"){
+target=`DN 250: ${r.tp250_dn.toFixed(2)}`;
+}
 
-    market[sym].history.push(tick.p);
+html+=`
+<tr>
+<td>${s}</td>
+<td class="price">${p.toFixed(4)}</td>
+<td class="${cls}">${r.signal}</td>
+<td>${r.bullPct.toFixed(1)}%</td>
+<td>${r.prob250.toFixed(1)}%</td>
+<td class="small">${target}</td>
+<td class="small">${r.status}</td>
+<td class="note">${r.note}</td>
+</tr>
+`;
+}
 
-    if (market[sym].history.length > 300) {
-      market[sym].history.shift();
-    }
+document.getElementById("data").innerHTML=html;
+document.getElementById("update").innerHTML=
+"Last Update: "+new Date().toLocaleString();
+}
 
-  });
-
-  render();
-};
+render();
+setInterval(render,15000);
 
 </script>
 
